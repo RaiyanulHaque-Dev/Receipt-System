@@ -1,0 +1,321 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Members — SMT Receipt System</title>
+<link rel="stylesheet" href="style.css" />
+<style>
+  .setup-notice {
+    background: #fff3cd;
+    border: 1.5px solid #ffc107;
+    border-radius: 4px;
+    padding: 1.2rem 1.5rem;
+    margin-bottom: 1.5rem;
+    font-size: 0.85rem;
+    color: #664d00;
+  }
+
+  .members-toolbar {
+    display: flex;
+    gap: 0.75rem;
+    margin-bottom: 1.5rem;
+    align-items: center;
+  }
+
+  .members-toolbar input {
+    flex: 1;
+    border: 1.5px solid var(--border);
+    border-radius: 3px;
+    padding: 0.65rem 0.9rem;
+    font-family: 'DM Sans', sans-serif;
+    font-size: 0.9rem;
+    background: #fff;
+  }
+
+  .members-toolbar input:focus {
+    outline: none;
+    border-color: var(--accent);
+  }
+
+  table.members-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.9rem;
+  }
+
+  .members-table th {
+    text-align: left;
+    font-size: 0.68rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--muted);
+    font-family: 'DM Mono', monospace;
+    padding: 0.6rem 0.8rem;
+    border-bottom: 1.5px solid var(--border);
+  }
+
+  .members-table td {
+    padding: 0.7rem 0.8rem;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .members-table tr:last-child td { border-bottom: none; }
+
+  .members-table td.mono {
+    font-family: 'DM Mono', monospace;
+    font-size: 0.82rem;
+  }
+
+  .members-table .edit-link {
+    color: var(--accent);
+    text-decoration: none;
+    font-weight: 600;
+    font-size: 0.8rem;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    cursor: pointer;
+  }
+
+  .members-table .edit-link:hover { text-decoration: underline; }
+
+  .empty-row td {
+    text-align: center;
+    color: var(--muted);
+    padding: 2rem;
+    font-family: 'DM Mono', monospace;
+    font-size: 0.85rem;
+  }
+
+  .add-member-panel {
+    margin-top: 1.5rem;
+    display: none;
+  }
+
+  .add-member-panel.show { display: block; }
+
+  .members-header-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 1rem;
+  }
+
+  .members-header-row h2 {
+    font-family: 'DM Serif Display', serif;
+    font-size: 1.3rem;
+  }
+
+  .inline-form-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1.2rem;
+    margin-bottom: 1.2rem;
+  }
+
+  @media (max-width: 560px) { .inline-form-grid { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+
+<header class="site-header">
+  <div class="brand"><span>SMT</span> Receipt System</div>
+  <nav>
+    <a href="index.html">Admin</a>
+    <a href="members.html" class="active">Members</a>
+    <a href="verify.html">Verify</a>
+  </nav>
+</header>
+
+<div class="page-wrap">
+  <h1 class="page-title">Members</h1>
+  <p class="page-sub">// manage members used for receipt generation</p>
+
+  <div class="setup-notice" id="noUrlNotice" style="display:none;">
+    <strong>⚙️ API URL Not Set</strong>
+    Please go to the Admin page and save your Apps Script Web App URL first.
+  </div>
+
+  <!-- ── List Card ── -->
+  <div class="card">
+    <div class="members-header-row">
+      <h2>All Members</h2>
+      <button class="btn btn-primary" onclick="toggleAddPanel()" id="toggleAddBtn">+ Add Member</button>
+    </div>
+
+    <div class="members-toolbar">
+      <input type="text" id="searchBox" placeholder="Search by ID, name, or phone..." oninput="renderTable()" />
+    </div>
+
+    <table class="members-table">
+      <thead>
+        <tr>
+          <th>Member ID</th>
+          <th>Member Name</th>
+          <th>Phone Number</th>
+          <th>Edit</th>
+        </tr>
+      </thead>
+      <tbody id="membersTbody">
+        <tr class="empty-row"><td colspan="4">Loading members…</td></tr>
+      </tbody>
+    </table>
+
+    <!-- ── Add / Edit Member Panel ── -->
+    <div class="add-member-panel" id="addPanel">
+      <div class="divider">member details</div>
+      <form id="memberForm">
+        <input type="hidden" id="editMemberId" />
+        <div class="inline-form-grid">
+          <div class="form-group">
+            <label>Member Name *</label>
+            <input type="text" id="mName" placeholder="Full name" required />
+          </div>
+          <div class="form-group">
+            <label>Phone Number *</label>
+            <input type="tel" id="mPhone" placeholder="01XXXXXXXXX" required />
+          </div>
+        </div>
+        <div style="display:flex; justify-content:flex-end; gap:0.75rem;">
+          <button type="button" class="btn btn-outline" onclick="toggleAddPanel(false)">Cancel</button>
+          <button type="submit" class="btn btn-primary" id="saveMemberBtn">Save Member</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const STORAGE_KEY = 'smt_api_url';
+let membersCache = [];
+
+const apiUrl = localStorage.getItem(STORAGE_KEY);
+
+window.addEventListener('DOMContentLoaded', () => {
+  if (!apiUrl) {
+    document.getElementById('noUrlNotice').style.display = 'block';
+    document.getElementById('membersTbody').innerHTML =
+      '<tr class="empty-row"><td colspan="4">No API URL configured. Set it on the Admin page.</td></tr>';
+    return;
+  }
+  loadMembers();
+});
+
+// ── Load members from the Members sheet (separate from Receipt sheet)
+async function loadMembers() {
+  try {
+    const res = await fetch(`${apiUrl}?action=listMembers`);
+    const json = await res.json();
+    membersCache = (json && json.data) ? json.data : [];
+    renderTable();
+  } catch (err) {
+    console.error(err);
+    document.getElementById('membersTbody').innerHTML =
+      '<tr class="empty-row"><td colspan="4">Failed to load members. Check your API URL / Apps Script deployment.</td></tr>';
+  }
+}
+
+// ── Render table with search filter
+function renderTable() {
+  const q = document.getElementById('searchBox').value.trim().toLowerCase();
+  const filtered = !q ? membersCache : membersCache.filter(m =>
+    String(m.MemberID).toLowerCase().includes(q) ||
+    String(m.MemberName).toLowerCase().includes(q) ||
+    String(m.Phone).toLowerCase().includes(q)
+  );
+
+  const tbody = document.getElementById('membersTbody');
+
+  if (!filtered.length) {
+    tbody.innerHTML = '<tr class="empty-row"><td colspan="4">No members found.</td></tr>';
+    return;
+  }
+
+  tbody.innerHTML = filtered.map(m => `
+    <tr>
+      <td class="mono">${m.MemberID}</td>
+      <td>${m.MemberName}</td>
+      <td class="mono">${m.Phone}</td>
+      <td><span class="edit-link" onclick="editMember('${m.MemberID}')">Edit</span></td>
+    </tr>
+  `).join('');
+}
+
+// ── Show / hide add panel
+function toggleAddPanel(forceState) {
+  const panel = document.getElementById('addPanel');
+  const show = forceState !== undefined ? forceState : !panel.classList.contains('show');
+  panel.classList.toggle('show', show);
+  if (!show) resetForm();
+}
+
+function resetForm() {
+  document.getElementById('memberForm').reset();
+  document.getElementById('editMemberId').value = '';
+  document.getElementById('saveMemberBtn').textContent = 'Save Member';
+}
+
+// ── Populate form for editing an existing member
+function editMember(memberId) {
+  const m = membersCache.find(x => x.MemberID === memberId);
+  if (!m) return;
+  document.getElementById('editMemberId').value = m.MemberID;
+  document.getElementById('mName').value = m.MemberName;
+  document.getElementById('mPhone').value = m.Phone;
+  document.getElementById('saveMemberBtn').textContent = 'Update Member';
+  toggleAddPanel(true);
+  document.getElementById('addPanel').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+
+// ── Save (add or update) member
+document.getElementById('memberForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  if (!apiUrl) return showToast('⚠ Please set your API URL on the Admin page first');
+
+  const btn = document.getElementById('saveMemberBtn');
+  btn.disabled = true;
+  const editingId = document.getElementById('editMemberId').value;
+  btn.innerHTML = '<span class="spinner spinner-dark"></span> Saving...';
+
+  const payload = {
+    action: editingId ? 'updateMember' : 'addMember',
+    memberId: editingId || undefined,
+    memberName: document.getElementById('mName').value.trim(),
+    phone: document.getElementById('mPhone').value.trim(),
+  };
+
+  try {
+    await fetch(apiUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+      mode: 'no-cors'
+    });
+
+    // Apps Script POST responses can't be read in no-cors mode, so
+    // give the sheet a brief moment to update, then refresh the table.
+    showToast(editingId ? 'Member updated ✓' : 'Member added ✓');
+    toggleAddPanel(false);
+    setTimeout(loadMembers, 900);
+
+  } catch (err) {
+    console.error(err);
+    showToast('❌ Failed to save member.');
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = editingId ? 'Update Member' : 'Save Member';
+  }
+});
+
+function showToast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), 3000);
+}
+</script>
+
+</body>
+</html>
