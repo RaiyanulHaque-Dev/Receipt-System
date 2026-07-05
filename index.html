@@ -75,21 +75,21 @@
       <div class="form-grid">
 
         <div class="form-group full">
-          <label>Select Member *</label>
-          <input type="text" id="memberSearch" list="memberList" placeholder="Type name, ID or phone to search..."
-            autocomplete="off" required oninput="handleMemberInput()" />
+          <label>Select Member (optional)</label>
+          <input type="text" id="memberSearch" list="memberList" placeholder="Type to search saved members, or just fill in Name/Phone manually below..."
+            autocomplete="off" oninput="handleMemberInput()" />
           <datalist id="memberList"></datalist>
           <input type="hidden" id="memberId" />
         </div>
 
         <div class="form-group">
           <label>Member Name *</label>
-          <input type="text" id="memberName" placeholder="Auto-filled from selection" readonly required />
+          <input type="text" id="memberName" placeholder="Full name" required />
         </div>
 
         <div class="form-group">
           <label>Phone Number *</label>
-          <input type="tel" id="phone" placeholder="Auto-filled from selection" readonly required />
+          <input type="tel" id="phone" placeholder="01XXXXXXXXX" required />
         </div>
 
         <div class="form-group">
@@ -155,10 +155,13 @@
 const STORAGE_KEY = 'smt_api_url';
 let membersCache = [];
 
-// Same Supabase project used by members.html — keeps member data in sync
+// Same Supabase project used by members.html. This is entirely optional —
+// if it fails to load (network issue, table not set up yet, etc.) the
+// Member Name / Phone fields below still work fine as plain manual entry.
 const SUPABASE_URL = 'https://izucwoicwgjgddnqpaty.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_PjfvU2oSRe0Vg5FQRwfg1Q__V9tKfAn';
-const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+window.sb = window.sb || (window.supabase ? window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY) : null);
+const sb = window.sb;
 
 // ── Load saved API URL
 window.addEventListener('DOMContentLoaded', () => {
@@ -167,27 +170,31 @@ window.addEventListener('DOMContentLoaded', () => {
   loadMembersForDropdown();
 });
 
-// ── Load members into the searchable dropdown (from Supabase)
+// ── Load members into the searchable dropdown (optional convenience only)
 async function loadMembersForDropdown() {
-  const { data, error } = await supabase
-    .from('members')
-    .select('*')
-    .order('created_at', { ascending: true });
+  if (!sb) return; // Supabase library didn't load — manual entry still works fine
 
-  if (error) {
-    console.error('Could not load members for dropdown:', error);
-    return;
+  try {
+    const { data, error } = await sb
+      .from('members')
+      .select('*')
+      .order('created_at', { ascending: true });
+
+    if (error) throw error;
+
+    membersCache = data || [];
+    const list = document.getElementById('memberList');
+    list.innerHTML = membersCache
+      .map(m => `<option value="${m.member_id} - ${m.member_name} - ${m.phone}">`)
+      .join('');
+  } catch (err) {
+    // Fine to fail silently here — the dropdown is just a shortcut;
+    // Member Name / Phone below remain plain, editable, manual fields.
+    console.warn('Member list unavailable, manual entry still works:', err);
   }
-
-  membersCache = data || [];
-
-  const list = document.getElementById('memberList');
-  list.innerHTML = membersCache
-    .map(m => `<option value="${m.member_id} - ${m.member_name} - ${m.phone}">`)
-    .join('');
 }
 
-// ── Match typed/selected value against a cached member and auto-fill
+// ── If a dropdown option is picked, auto-fill Name/Phone (still editable after)
 function handleMemberInput() {
   const typed = document.getElementById('memberSearch').value;
   const match = membersCache.find(m => `${m.member_id} - ${m.member_name} - ${m.phone}` === typed);
@@ -196,11 +203,9 @@ function handleMemberInput() {
     document.getElementById('memberId').value = match.member_id;
     document.getElementById('memberName').value = match.member_name;
     document.getElementById('phone').value = match.phone;
-  } else {
-    document.getElementById('memberId').value = '';
-    document.getElementById('memberName').value = '';
-    document.getElementById('phone').value = '';
   }
+  // No match (including manual typing that doesn't match any saved member)
+  // simply leaves Name/Phone as whatever the admin has typed into them.
 }
 
 function saveApiUrl() {
@@ -208,7 +213,6 @@ function saveApiUrl() {
   if (!url) return showToast('Please enter a valid URL');
   localStorage.setItem(STORAGE_KEY, url);
   showToast('API URL saved ✓');
-  loadMembersForDropdown();
 }
 
 // ── Toggle Transaction ID field
