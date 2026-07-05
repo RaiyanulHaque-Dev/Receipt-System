@@ -212,7 +212,13 @@
 // the RLS policies you set up. Keep this table non-sensitive.
 const SUPABASE_URL = 'https://izucwoicwgjgddnqpaty.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_PjfvU2oSRe0Vg5FQRwfg1Q__V9tKfAn';
-const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+// Idempotent + collision-safe: won't throw even if this script tag
+// somehow executes more than once (stale cache, duplicate <script>
+// tag, hot-reload, etc.), and doesn't shadow the library's own
+// global `window.supabase` namespace object.
+window.sb = window.sb || window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+const sb = window.sb;
 
 let membersCache = [];
 
@@ -220,7 +226,7 @@ window.addEventListener('DOMContentLoaded', loadMembers);
 
 // ── Load members from Supabase ──────────────────────────────
 async function loadMembers() {
-  const { data, error } = await supabase
+  const { data, error } = await sb
     .from('members')
     .select('*')
     .order('created_at', { ascending: true });
@@ -326,13 +332,13 @@ document.getElementById('memberForm').addEventListener('submit', async (e) => {
   try {
     let error;
     if (editingId) {
-      ({ error } = await supabase
+      ({ error } = await sb
         .from('members')
         .update({ member_name: memberName, phone })
         .eq('member_id', editingId));
     } else {
       const newId = generateNextMemberId();
-      ({ error } = await supabase
+      ({ error } = await sb
         .from('members')
         .insert({ member_id: newId, member_name: memberName, phone }));
     }
@@ -410,7 +416,7 @@ async function submitBulkAdd() {
 
     try {
       const newId = generateNextMemberId();
-      const { error } = await supabase
+      const { error } = await sb
         .from('members')
         .insert({ member_id: newId, member_name: row.name, phone: row.phone });
 
